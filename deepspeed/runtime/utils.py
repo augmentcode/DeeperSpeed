@@ -1,20 +1,18 @@
-'''
+"""
 Copyright 2019 The Microsoft DeepSpeed Team
 
 Copyright NVIDIA/Megatron
 
 Helper functions and classes from multiple sources.
-'''
+"""
 
-import os
-import psutil
 import gc
-from math import ceil
-from math import floor
+import os
 from bisect import bisect_left, bisect_right
+from math import ceil, floor
 
+import psutil
 import torch
-import torch.distributed as dist
 import torch.distributed as dist
 
 try:
@@ -22,8 +20,9 @@ try:
 except ModuleNotFoundError:
     from torch import inf as inf
 
-from deepspeed.utils import logger
 from numpy import prod
+
+from deepspeed.utils import logger
 
 
 def ensure_directory_exists(filename):
@@ -37,8 +36,10 @@ def ensure_directory_exists(filename):
 
 
 def set_random_seed(seed):
-    import numpy
     import random
+
+    import numpy
+
     random.seed(seed)
     numpy.random.seed(seed)
     torch.manual_seed(seed)
@@ -67,12 +68,11 @@ def move_to_device(item, device):
 
 
 class CheckOverflow(object):
-    '''Checks for overflow in gradient across parallel process'''
-    def __init__(self,
-                 param_groups=None,
-                 mpu=None,
-                 zero_reduce_scatter=False,
-                 deepspeed=None):
+    """Checks for overflow in gradient across parallel process"""
+
+    def __init__(
+        self, param_groups=None, mpu=None, zero_reduce_scatter=False, deepspeed=None
+    ):
         self.mpu = mpu
         self.params = [] if param_groups else None
         self.zero_reduce_scatter = zero_reduce_scatter
@@ -88,9 +88,11 @@ class CheckOverflow(object):
 
         if self.mpu is not None:
             overflow_gpu = torch.cuda.ByteTensor([overflow])
-            torch.distributed.all_reduce(overflow_gpu,
-                                         op=torch.distributed.ReduceOp.MAX,
-                                         group=self.mpu.get_model_parallel_group())
+            torch.distributed.all_reduce(
+                overflow_gpu,
+                op=torch.distributed.ReduceOp.MAX,
+                group=self.mpu.get_model_parallel_group(),
+            )
             overflow = overflow_gpu[0].item()
         elif reduce_overflow:
             cuda_overflow = torch.cuda.FloatTensor([overflow])
@@ -105,8 +107,9 @@ class CheckOverflow(object):
         if param_groups is None:
             params = self.params
         else:
-            assert param_groups is not None, \
-                "self.params and param_groups both cannot be none"
+            assert (
+                param_groups is not None
+            ), "self.params and param_groups both cannot be none"
 
             for group in param_groups:
                 for param in group:
@@ -118,6 +121,7 @@ class CheckOverflow(object):
     def has_overflow_serial(self, params):
         for i, p in enumerate(params):
             if p.grad is not None and self._has_inf_or_nan(p.grad.data, i):
+                logger.warning("Gradient overflow: %s", p.name)
                 return True
         return False
 
@@ -130,28 +134,42 @@ class CheckOverflow(object):
         #                             op=torch.distributed.ReduceOp.MAX,
         #                             group=mpu.get_model_parallel_group())
         if self.zero_reduce_scatter:
-            torch.distributed.all_reduce(overflow_gpu,
-                                         op=torch.distributed.ReduceOp.MAX,
-                                         group=torch.distributed.group.WORLD)
+            torch.distributed.all_reduce(
+                overflow_gpu,
+                op=torch.distributed.ReduceOp.MAX,
+                group=torch.distributed.group.WORLD,
+            )
         elif self.mpu is not None:
             if self.deepspeed is not None:
-                using_pipeline = hasattr(self.deepspeed,
-                                         'pipeline_enable_backward_allreduce')
-                if (using_pipeline
-                        and self.deepspeed.pipeline_enable_backward_allreduce is False
-                    ) or (not using_pipeline
-                          and self.deepspeed.enable_backward_allreduce is False):
+                using_pipeline = hasattr(
+                    self.deepspeed, "pipeline_enable_backward_allreduce"
+                )
+                if (
+                    using_pipeline
+                    and self.deepspeed.pipeline_enable_backward_allreduce is False
+                ) or (
+                    not using_pipeline
+                    and self.deepspeed.enable_backward_allreduce is False
+                ):
                     torch.distributed.all_reduce(
                         overflow_gpu,
                         op=torch.distributed.ReduceOp.MAX,
-                        group=self.mpu.get_data_parallel_group())
-            torch.distributed.all_reduce(overflow_gpu,
-                                         op=torch.distributed.ReduceOp.MAX,
-                                         group=self.mpu.get_model_parallel_group())
-        elif self.deepspeed is not None and self.deepspeed.enable_backward_allreduce is False:
-            torch.distributed.all_reduce(overflow_gpu,
-                                         op=torch.distributed.ReduceOp.MAX,
-                                         group=torch.distributed.group.WORLD)
+                        group=self.mpu.get_data_parallel_group(),
+                    )
+            torch.distributed.all_reduce(
+                overflow_gpu,
+                op=torch.distributed.ReduceOp.MAX,
+                group=self.mpu.get_model_parallel_group(),
+            )
+        elif (
+            self.deepspeed is not None
+            and self.deepspeed.enable_backward_allreduce is False
+        ):
+            torch.distributed.all_reduce(
+                overflow_gpu,
+                op=torch.distributed.ReduceOp.MAX,
+                group=torch.distributed.group.WORLD,
+            )
 
         overflow = overflow_gpu[0].item()
         return bool(overflow)
@@ -174,13 +192,18 @@ class CheckOverflow(object):
                 raise
             return True
         else:
-            if cpu_sum == float('inf') or cpu_sum == -float('inf') or cpu_sum != cpu_sum:
+            if (
+                cpu_sum == float("inf")
+                or cpu_sum == -float("inf")
+                or cpu_sum != cpu_sum
+            ):
                 return True
             return False
 
 
 def _handle_overflow(cpu_sum, x, i):
     import math
+
     rank = torch.distributed.get_rank()
     if rank == 0:
         t_i = -1
@@ -220,16 +243,19 @@ def get_grad_norm(parameters, norm_type=2, mpu=None):
         total_norm_cuda = torch.cuda.FloatTensor([float(total_norm)])
         # Take max across all GPUs.
         if mpu is not None:
-            torch.distributed.all_reduce(total_norm_cuda,
-                                         op=torch.distributed.ReduceOp.MAX,
-                                         group=mpu.get_model_parallel_group())
+            torch.distributed.all_reduce(
+                total_norm_cuda,
+                op=torch.distributed.ReduceOp.MAX,
+                group=mpu.get_model_parallel_group(),
+            )
         total_norm = total_norm_cuda[0].item()
     else:
-        total_norm = 0.
+        total_norm = 0.0
         for p in parameters:
             if mpu is not None:
-                if (mpu.get_model_parallel_rank() == 0
-                ) or is_model_parallel_parameter(p):
+                if (mpu.get_model_parallel_rank() == 0) or is_model_parallel_parameter(
+                    p
+                ):
                     param_norm = p.grad.data.float().norm(norm_type)
                     total_norm += param_norm.item() ** norm_type
             else:
@@ -239,13 +265,18 @@ def get_grad_norm(parameters, norm_type=2, mpu=None):
         # Sum across all model parallel GPUs.
         total_norm_cuda = torch.cuda.FloatTensor([float(total_norm)])
         if mpu is not None:
-            torch.distributed.all_reduce(total_norm_cuda,
-                                         op=torch.distributed.ReduceOp.SUM,
-                                         group=mpu.get_model_parallel_group())
-        total_norm = total_norm_cuda[0].item() ** (1. / norm_type)
+            torch.distributed.all_reduce(
+                total_norm_cuda,
+                op=torch.distributed.ReduceOp.SUM,
+                group=mpu.get_model_parallel_group(),
+            )
+        total_norm = total_norm_cuda[0].item() ** (1.0 / norm_type)
 
-    if total_norm == float(
-            'inf') or total_norm == -float('inf') or total_norm != total_norm:
+    if (
+        total_norm == float("inf")
+        or total_norm == -float("inf")
+        or total_norm != total_norm
+    ):
         total_norm = -1
 
     return total_norm
@@ -277,52 +308,62 @@ def get_weight_norm(parameters, norm_type=2, mpu=None):
         total_norm_cuda = torch.cuda.FloatTensor([float(total_norm)])
         # Take max across all GPUs.
         if mpu is not None:
-            torch.distributed.all_reduce(total_norm_cuda,
-                                         op=torch.distributed.ReduceOp.MAX,
-                                         group=mpu.get_model_parallel_group())
+            torch.distributed.all_reduce(
+                total_norm_cuda,
+                op=torch.distributed.ReduceOp.MAX,
+                group=mpu.get_model_parallel_group(),
+            )
         total_norm = total_norm_cuda[0].item()
     else:
-        total_norm = 0.
+        total_norm = 0.0
         for p in parameters:
             if mpu is not None:
-                if (mpu.get_model_parallel_rank() == 0
-                ) or is_model_parallel_parameter(p):
+                if (mpu.get_model_parallel_rank() == 0) or is_model_parallel_parameter(
+                    p
+                ):
                     try:
-                        param_norm = float(torch.norm(p, norm_type, dtype=torch.float32))
+                        param_norm = float(
+                            torch.norm(p, norm_type, dtype=torch.float32)
+                        )
                     except TypeError as err:
                         param_norm = float(torch.norm(p.float(), norm_type))
 
                     # param_norm = p.data.float().norm(norm_type)
-                    total_norm += param_norm ** norm_type
+                    total_norm += param_norm**norm_type
             else:
                 try:
                     param_norm = float(torch.norm(p, norm_type, dtype=torch.float32))
                 except TypeError as err:
                     param_norm = float(torch.norm(p.float(), norm_type))
                 # param_norm = p.data.float().norm(norm_type)
-                total_norm += param_norm ** norm_type
+                total_norm += param_norm**norm_type
 
         # Sum across all model parallel GPUs.
         total_norm_cuda = torch.cuda.FloatTensor([float(total_norm)])
         if mpu is not None:
-            torch.distributed.all_reduce(total_norm_cuda,
-                                         op=torch.distributed.ReduceOp.SUM,
-                                         group=mpu.get_model_parallel_group())
-        total_norm = total_norm_cuda[0].item() ** (1. / norm_type)
+            torch.distributed.all_reduce(
+                total_norm_cuda,
+                op=torch.distributed.ReduceOp.SUM,
+                group=mpu.get_model_parallel_group(),
+            )
+        total_norm = total_norm_cuda[0].item() ** (1.0 / norm_type)
 
-    if total_norm == float(
-            'inf') or total_norm == -float('inf') or total_norm != total_norm:
+    if (
+        total_norm == float("inf")
+        or total_norm == -float("inf")
+        or total_norm != total_norm
+    ):
         total_norm = -1
 
     return total_norm
 
 
 def is_model_parallel_parameter(p):
-    return hasattr(p, 'model_parallel') and p.model_parallel
+    return hasattr(p, "model_parallel") and p.model_parallel
 
 
 def prefix_sum_inc(weights):
-    """ Compute an inclusive prefix sum.
+    """Compute an inclusive prefix sum.
 
     Example:
         >>> prefix_sum_inc([3,4,5])
@@ -367,11 +408,9 @@ def _lprobe(weights, num_parts, bottleneck):
             step += chunksize
 
         # Find the end index of partition p
-        parts[p] = bisect_left(weights,
-                               bsum,
-                               lo=step - chunksize,
-                               hi=min(step,
-                                      num_items))
+        parts[p] = bisect_left(
+            weights, bsum, lo=step - chunksize, hi=min(step, num_items)
+        )
         # Nothing more to partition, return early
         if parts[p] == num_items:
             # See if the current partition is overweight.
@@ -431,7 +470,7 @@ class PartitionedTensor:
         self.local_data, self.partition = self._partition_tensor(tensor)
 
     @classmethod
-    def from_meta(cls, meta, local_part, group, device='cuda'):
+    def from_meta(cls, meta, local_part, group, device="cuda"):
         assert meta.dtype == torch.long
         dummy = torch.ones(dist.get_world_size(group=group))
         part_obj = cls(tensor=dummy, group=group)
@@ -439,8 +478,8 @@ class PartitionedTensor:
         meta = meta.tolist()
 
         # [N, list0, ..., listN-1]
-        part_obj.orig_size = meta[1:(1 + meta[0])]
-        meta = meta[1 + meta[0]:]
+        part_obj.orig_size = meta[1 : (1 + meta[0])]
+        meta = meta[1 + meta[0] :]
 
         part_obj.orig_device = device
         part_obj.local_data = local_part.detach()
@@ -457,13 +496,18 @@ class PartitionedTensor:
         return part_obj
 
     def _partition_tensor(self, tensor):
-        partition = partition_uniform(num_items=tensor.numel(), num_parts=self.num_parts)
+        partition = partition_uniform(
+            num_items=tensor.numel(), num_parts=self.num_parts
+        )
         start = partition[self.rank]
         length = partition[self.rank + 1] - start
-        tensor_part = tensor.detach().contiguous().view(-1).narrow(
-            0,
-            start=start,
-            length=length).clone()
+        tensor_part = (
+            tensor.detach()
+            .contiguous()
+            .view(-1)
+            .narrow(0, start=start, length=length)
+            .clone()
+        )
 
         return tensor_part, partition
 
@@ -473,9 +517,9 @@ class PartitionedTensor:
 
         # Allocate the full tensor as a flat buffer.
         full_numel = prod(self.full_size())
-        flat_tensor = torch.zeros([full_numel],
-                                  dtype=self.local_data.dtype,
-                                  device=device)
+        flat_tensor = torch.zeros(
+            [full_numel], dtype=self.local_data.dtype, device=device
+        )
 
         # Prepare all-gather buffer
         partition_tensors = []
@@ -487,9 +531,9 @@ class PartitionedTensor:
             partition_tensors.append(buf)
 
         # Collect the full tensor
-        dist.all_gather(partition_tensors,
-                        partition_tensors[self.rank],
-                        group=self.group)
+        dist.all_gather(
+            partition_tensors, partition_tensors[self.rank], group=self.group
+        )
 
         for i in range(len(partition_tensors)):
             partition_tensors[i].data = torch.zeros(1)
@@ -554,19 +598,19 @@ def memory_status(msg, print_rank=-1, reset_max=False):
     max_cached = torch.cuda.max_memory_cached()
 
     # convert to GB for printing
-    new_alloced /= 1024 ** 3
-    new_cached /= 1024 ** 3
-    delta_alloced /= 1024 ** 3
-    delta_cached /= 1024 ** 3
-    max_alloced /= 1024 ** 3
-    max_cached /= 1024 ** 3
+    new_alloced /= 1024**3
+    new_cached /= 1024**3
+    delta_alloced /= 1024**3
+    delta_cached /= 1024**3
+    max_alloced /= 1024**3
+    max_cached /= 1024**3
 
     print(
-        f'RANK={rank} MEMSTATS',
+        f"RANK={rank} MEMSTATS",
         msg,
-        f'device={torch.cuda.current_device()} '
-        f'current alloc={new_alloced:0.4f}GB (delta={delta_alloced:0.4f}GB max={max_alloced:0.4f}GB) '
-        f'current cache={new_cached:0.4f}GB (delta={delta_cached:0.4f}GB max={max_cached:0.4f}GB)'
+        f"device={torch.cuda.current_device()} "
+        f"current alloc={new_alloced:0.4f}GB (delta={delta_alloced:0.4f}GB max={max_alloced:0.4f}GB) "
+        f"current cache={new_cached:0.4f}GB (delta={delta_cached:0.4f}GB max={max_cached:0.4f}GB)",
     )
 
 
@@ -585,12 +629,14 @@ def see_memory_usage(message, force=False):
         f"MA {round(torch.cuda.memory_allocated() / (1024 * 1024 * 1024), 2)} GB \
         Max_MA {round(torch.cuda.max_memory_allocated() / (1024 * 1024 * 1024), 2)} GB \
         CA {round(torch.cuda.memory_cached() / (1024 * 1024 * 1024), 2)} GB \
-        Max_CA {round(torch.cuda.max_memory_cached() / (1024 * 1024 * 1024))} GB ")
+        Max_CA {round(torch.cuda.max_memory_cached() / (1024 * 1024 * 1024))} GB "
+    )
 
     vm_stats = psutil.virtual_memory()
-    used_GB = round(((vm_stats.total - vm_stats.available) / (1024 ** 3)), 2)
+    used_GB = round(((vm_stats.total - vm_stats.available) / (1024**3)), 2)
     logger.info(
-        f'CPU Virtual Memory:  used = {used_GB} GB, percent = {vm_stats.percent}%')
+        f"CPU Virtual Memory:  used = {used_GB} GB, percent = {vm_stats.percent}%"
+    )
 
     # get the peak memory to report correct data, so reset the counter for the next call
     if hasattr(torch.cuda, "reset_peak_memory_stats"):  # pytorch 1.4+
@@ -608,21 +654,23 @@ def call_to_str(base, *args, **kwargs):
     Returns:
         str: A string representation of base(*args, **kwargs)
     """
-    name = f'{base}('
+    name = f"{base}("
     if args:
-        name += ', '.join(repr(arg) for arg in args)
+        name += ", ".join(repr(arg) for arg in args)
         if kwargs:
-            name += ', '
+            name += ", "
     if kwargs:
-        name += ', '.join(f'{key}={repr(arg)}' for key, arg in kwargs.items())
-    name += ')'
+        name += ", ".join(f"{key}={repr(arg)}" for key, arg in kwargs.items())
+    name += ")"
     return name
 
 
 class GradientNoiseScale:
-
     def __init__(self, model, batch_size_small, n_batches, beta):
-        self.batch_size_small, self.batch_size_large = batch_size_small, batch_size_small * n_batches
+        self.batch_size_small, self.batch_size_large = (
+            batch_size_small,
+            batch_size_small * n_batches,
+        )
         self.n_batches = n_batches
         self.beta = beta
         self.model = model
@@ -635,7 +683,8 @@ class GradientNoiseScale:
         self.n_updates = 0
 
     def ema(self, avg, yi, i):
-        if avg is None: avg = 0
+        if avg is None:
+            avg = 0
         avg = self.beta * avg + (1 - self.beta) * yi
         return avg, avg / (1 - self.beta ** (i + 1))
 
@@ -645,14 +694,16 @@ class GradientNoiseScale:
         return grads
 
     def _get_scale(self, grads_small, grads_big):
-        return (grads_small - grads_big) / ((1 / self.batch_size_small) - (1 / self.batch_size_large))
+        return (grads_small - grads_big) / (
+            (1 / self.batch_size_small) - (1 / self.batch_size_large)
+        )
 
     def _get_noise(self, grads_small, grads_big):
-        return (self.batch_size_large * grads_big - self.batch_size_small * grads_small) / (
-                self.batch_size_large - self.batch_size_small)
+        return (
+            self.batch_size_large * grads_big - self.batch_size_small * grads_small
+        ) / (self.batch_size_large - self.batch_size_small)
 
     def update(self):
-
         curr_grad = self._flatten_grads()
         self.buffer.append(curr_grad)
         if self.n_updates % self.n_batches == self.n_batches - 1:
@@ -662,8 +713,8 @@ class GradientNoiseScale:
 
             past_grads = past_grads.mean(dim=1)
 
-            g_big = (past_grads ** 2).mean()
-            g_small = (curr_grad ** 2).mean()
+            g_big = (past_grads**2).mean()
+            g_small = (curr_grad**2).mean()
 
             noise = self._get_noise(g_small, g_big)
             scale = self._get_scale(g_small, g_big)

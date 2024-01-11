@@ -1,15 +1,16 @@
 import math
-import torch
-import torch.distributed as dist
+import time
 from collections import defaultdict
 
-from deepspeed.runtime.zero.utils import _initialize_parameter_parallel_groups
-from deepspeed.runtime.fp16.loss_scaler import LossScaler, DynamicLossScaler
-from deepspeed.runtime.utils import get_grad_norm, CheckOverflow
-from deepspeed.runtime.zero.config import ZERO_OPTIMIZATION_OPTIMIZER_STATES
-from deepspeed.utils import logger, log_dist
+import torch
+import torch.distributed as dist
+
 from deepspeed.ops.op_builder import UtilsBuilder
-import time
+from deepspeed.runtime.fp16.loss_scaler import DynamicLossScaler, LossScaler
+from deepspeed.runtime.utils import CheckOverflow, get_grad_norm
+from deepspeed.runtime.zero.config import ZERO_OPTIMIZATION_OPTIMIZER_STATES
+from deepspeed.runtime.zero.utils import _initialize_parameter_parallel_groups
+from deepspeed.utils import log_dist, logger
 
 
 def get_alignment_padding(flattened_lean_size, sub_partition_id, sub_partition_size):
@@ -695,7 +696,7 @@ class FP16_DeepSpeedZeroOptimizer_Stage1(object):
             self.zero_grad()
             if self.verbose:
                 logger.info(
-                    "[deepspeed] fp16 dynamic loss scale overflow! Skipping step. Attempted loss "
+                    "[deepspeed-vzhao] fp16 dynamic loss scale overflow! Skipping step. Attempted loss "
                     "scale: {}, reducing to {}".format(prev_scale,
                                                        self.loss_scale))
             return self.overflow
