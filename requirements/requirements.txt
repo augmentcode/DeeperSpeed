@@ -1,6 +1,6 @@
 torch>=1.2
 tqdm
-tensorboardX==1.8
+# tensorboardX==1.8  Do not install tensorboardX.
 ninja
 numpy
 psutil

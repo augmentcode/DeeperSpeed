@@ -14,7 +14,8 @@ import re
 
 from torch.nn.modules import Module
 from torch.distributed.distributed_c10d import _get_global_rank
-from tensorboardX import SummaryWriter
+# NOTE(arun): Disable tensorboard.
+#from tensorboardX import SummaryWriter
 
 from deepspeed.runtime.utils import see_memory_usage
 from deepspeed.runtime.zero.stage2 import FP16_DeepSpeedZeroOptimizer
@@ -288,7 +289,9 @@ class DeepSpeedEngine(Module):
         return self.pld_params()[PLD_GAMMA]
 
     def tensorboard_enabled(self):
-        return self._config.tensorboard_enabled
+        # NOTE(arun): We are permanently disabling tensorboard to remove the dependency
+        # on the tensorflow.
+        return False
 
     def tensorboard_output_path(self):
         return self._config.tensorboard_output_path
@@ -321,7 +324,8 @@ class DeepSpeedEngine(Module):
 
         os.makedirs(log_dir, exist_ok=True)
 
-        return SummaryWriter(log_dir=log_dir)
+        # NOTE(arun): Disable tensorboard.
+        return None # SummaryWriter(log_dir=log_dir)
 
     def wall_clock_breakdown(self):
         return self._config.wall_clock_breakdown
