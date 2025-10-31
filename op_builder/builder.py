@@ -303,7 +303,8 @@ class CUDAOpBuilder(OpBuilder):
 
         args = []
         for cc in ccs:
-            num = cc[0] + cc[2]
+            parts = cc.split(".")
+            num = parts[0] + parts[-1]
             args.append(f'-gencode=arch=compute_{num},code=sm_{num}')
             if cc.endswith('+PTX'):
                 args.append(f'-gencode=arch=compute_{num},code=compute_{num}')
