@@ -31,13 +31,13 @@ class ScientificNotationEncoder(json.JSONEncoder):
                 return f"{o:e}"
             else:
                 return f"{o}"
-        elif isinstance(o, collections.Mapping):
+        elif isinstance(o, collections.abc.Mapping):
             x = [
                 f'\n{prefix}"{k}": {self.iterencode(v, level=level)}' for k,
                 v in o.items()
             ]
             return "{" + ', '.join(x) + f"\n{prefix_close}" + "}"
-        elif isinstance(o, collections.Sequence) and not isinstance(o, str):
+        elif isinstance(o, collections.abc.Sequence) and not isinstance(o, str):
             return f"[{ f', '.join(map(self.iterencode, o)) }]"
         return "\n, ".join(super().iterencode(o, _one_shot))
 
@@ -74,3 +74,4 @@ def dict_raise_error_on_duplicate_keys(ordered_pairs):
         keys = [key for key, value in counter.items() if value > 1]
         raise ValueError("Duplicate keys in DeepSpeed config: {}".format(keys))
     return d
+
